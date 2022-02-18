@@ -1,4 +1,5 @@
 import os
+from werkzeug.exceptions import HTTPException
 from flask import Flask, request, abort, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from flask_cors import CORS
@@ -9,23 +10,70 @@ from models import setup_db, Question, Category
 QUESTIONS_PER_PAGE = 10
 
 def create_app(test_config=None):
-    # create and configure the app
+
+
+    ##########################################################################
+    # - Config
+    ##########################################################################   
+    
+    # - Create and configure the app
     app = Flask(__name__)
     setup_db(app)
 
-    """
-    @TODO: Set up CORS. Allow '*' for origins. Delete the sample route after completing the TODOs
-    """
+    # - Activate CORS   
+    CORS(app)
+    #CORS(app, resources={r"/api/*": {"origins": "*"}})
 
-    """
-    @TODO: Use the after_request decorator to set Access-Control-Allow
-    """
+    # - Configure CORS headers
+    @app.after_request
+    def after_request(response):
+        response.headers.add(
+            "Access-Control-Allow-Headers", "Content-Type,Authorization,true"
+        )
+        response.headers.add(
+            "Access-Control-Allow-Methods", "GET,PUT,POST,DELETE,OPTIONS"
+        )
+        return response
+ 
 
-    """
-    @TODO:
-    Create an endpoint to handle GET requests
-    for all available categories.
-    """
+    ##########################################################################
+    # - Endpoints
+    ##########################################################################
+
+    # - GET endpoint to '/categories': Returns jsonified (key: value) pairs 
+    # - of categories
+    @app.route('/categories', methods=['GET'])
+    def retrieve_categories():
+        
+        # - Try to query, format and return the requested data
+        try:
+            # - Query the requested data
+            categories_unformatted = Category.query.all()
+
+            # - If the categories_unformatted object is emtpy throw an error
+            if(len(categories_unformatted) == 0):
+                abort(404)
+
+            # - Iterate over categories objects and format them in new 
+            # - object
+            categories_formatted = {}
+            for category in categories_unformatted:
+                categories_formatted[category.id] = category.type
+            
+            # - Return jsonified data
+            return jsonify({
+                'success': True,
+                'categories': categories_formatted,
+                'total_categories': len(categories_formatted)
+                })
+
+        # - For an inner error catch the error type, if nonexisten raise 400
+        except Exception as e:
+            if isinstance(e, HTTPException):
+                abort(e.code)
+            else:
+                abort(400)
+
 
 
     """
@@ -91,12 +139,44 @@ def create_app(test_config=None):
     one question at a time is displayed, the user is allowed to answer
     and shown whether they were correct or not.
     """
+    ##########################################################################
+    # - Error handlers
+    ##########################################################################
 
-    """
-    @TODO:
-    Create error handlers for all expected errors
-    including 404 and 422.
-    """
+    # - 400: Bad request
+    @app.errorhandler(400)
+    def bad_request(error):
+        return (
+            jsonify({
+                "success": False, 
+                "error": 400, 
+                "message": "bad request"
+            }), 400
+        )
+
+    # - 404: Not found
+    @app.errorhandler(404)
+    def not_found(error):
+        return (
+            jsonify({
+                "success": False, 
+                "error": 404, 
+                "message": "resource not found"
+            }),
+            404,
+        )
+
+    # - 422: Unprocessable
+    @app.errorhandler(422)
+    def unprocessable(error):
+        return (
+            jsonify({
+                "success": False,
+                "error": 422,
+                "message": "unprocessable"
+            }),
+            422,
+        )
 
     return app
 
