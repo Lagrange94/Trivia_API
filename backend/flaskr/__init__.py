@@ -7,15 +7,45 @@ import random
 
 from models import setup_db, Question, Category
 
+
+##############################################################################
+# - Helper functions
+############################################################################## 
+
+
 QUESTIONS_PER_PAGE = 10
 
+def paginate_questions(request, selection):
+    page = request.args.get("page", 1, type=int)
+    start = (page - 1) * QUESTIONS_PER_PAGE
+    end = start + QUESTIONS_PER_PAGE
+
+    questions = [question.format() for question in selection]
+    questions_formatted = questions[start:end]
+
+    return questions_formatted
+
+# - Return unformatted questions formatted
+def format_questions(questions_unformatted):
+    return [question.format() for question in questions_unformatted]
+
+# - Iterate over categories objects and format them in new object
+def format_categories(categories_unformatted):
+    categories_formatted = {}
+    for category in categories_unformatted:
+        categories_formatted[category.id] = category.type
+    return categories_formatted
+
+
 def create_app(test_config=None):
+
 
 
     ##########################################################################
     # - Config
     ##########################################################################   
     
+
     # - Create and configure the app
     app = Flask(__name__)
     setup_db(app)
@@ -36,29 +66,25 @@ def create_app(test_config=None):
         return response
  
 
+
     ##########################################################################
     # - Endpoints
     ##########################################################################
 
-    # - GET endpoint to '/categories': Returns jsonified (key: value) pairs 
-    # - of categories
+
+    # - GET endpoint to '/categories': Returns jsonified (key: value) pairs of
+    # - categories
     @app.route('/categories', methods=['GET'])
     def retrieve_categories():
         
         # - Try to query, format and return the requested data
         try:
-            # - Query the requested data
-            categories_unformatted = Category.query.all()
+            # - Query and format the categories
+            categories_formatted = format_categories(Category.query.all())
 
-            # - If the categories_unformatted object is emtpy throw an error
-            if(len(categories_unformatted) == 0):
+            # - If the categories_formatted object is emtpy throw an error
+            if(len(categories_formatted) == 0):
                 abort(404)
-
-            # - Iterate over categories objects and format them in new 
-            # - object
-            categories_formatted = {}
-            for category in categories_unformatted:
-                categories_formatted[category.id] = category.type
             
             # - Return jsonified data
             return jsonify({
@@ -75,6 +101,144 @@ def create_app(test_config=None):
                 abort(400)
 
 
+    # - GET endpoint to '/questions?page=${integer}': Returns jsonified 
+    # - question objects and further information 
+    @app.route('/questions', methods=['GET'])
+    def retrieve_questions():
+        
+        # - Try to query, format and return the requested data
+        try:            
+            # - Query the requested data
+            selection = Question.query.order_by(Question.id).all()
+            questions_formatted = paginate_questions(request, selection)
+
+            # - If the current_questions object is emtpy throw an error
+            if(len(questions_formatted) == 0):
+                abort(404)
+            
+            # - Query and format the categories
+            categories_formatted = format_categories(Category.query.all())
+            
+            # - If the categories_formatted object is emtpy throw an error
+            if(len(categories_formatted) == 0):
+                abort(404)
+
+            # - Return jsonified data
+            return jsonify({
+                'success': True,
+                'questions': questions_formatted,
+                'totalQuestions': len(Question.query.all()),
+                'categories': categories_formatted,
+                'currentCategory': (categories_formatted[questions_formatted[0]
+                                                         ['category']])
+                })
+
+        # - For an inner error catch the error type, if nonexisten raise 400
+        except Exception as e:
+            if isinstance(e, HTTPException):
+                abort(e.code)
+            else:
+                abort(400)
+
+
+    # - GET endpoint to '/categories/<int:category_id>/questions': Returns 
+    # - jsonified question objects and further information 
+    @app.route('/categories/<int:category_id>/questions', methods=['GET'])
+    def retrieve_questions_by_category(category_id):
+        
+        # - Try to query, format and return the requested data
+        try:            
+            # - Query the requested data by category_id and format it
+            questions_unformatted = (Question.query
+                                       .filter(Question.category == category_id)
+                                       .order_by(Question.id).all())
+            questions_formatted = format_questions(questions_unformatted)
+
+            # - If the current_questions object is emtpy throw an error
+            if(len(questions_formatted) == 0):
+                abort(404)
+            
+            # - Query and format the categories
+            categories_formatted = format_categories(Category.query.all())
+            
+
+            # - If the categories_formatted object is emtpy throw an error
+            if(len(categories_formatted) == 0):
+                abort(404)
+            
+            # - Return jsonified data
+            return jsonify({
+                'success': True,
+                'questions': questions_formatted,
+                'totalQuestions': len(Question.query.all()),
+                'current_category': categories_formatted[category_id]
+                })
+
+        # - For an inner error catch the error type, if nonexisten raise 400
+        except Exception as e:
+            if isinstance(e, HTTPException):
+                abort(e.code)
+            else:
+                abort(400)
+
+
+    # - DELETE endpoint to '/questions/<int:question_id>': Returns jsonified 
+    # - status response
+    @app.route("/questions/<int:question_id>", methods=["DELETE"])
+    def delete_question(question_id):
+        try:
+            # - Query the requested question
+            question = (Question.query.filter(Question.id == question_id)
+                                      .one_or_none())
+            
+            # - If the queried question does not exist throw an error
+            if question is None:
+                abort(404)
+
+            # - Delete the queried question
+            question.delete()
+
+            # - Return jsonified data
+            return jsonify({
+                'success': True,
+                'question_id': question_id
+                })
+
+        # - For an inner error catch the error type, if nonexisten raise 422
+        except Exception as e:
+            if isinstance(e, HTTPException):
+                abort(e.code)
+            else:
+                abort(422)
+
+
+    # - POST endpoint to '/quizzes': Returns jsonified question object
+    @app.route("/quizzes", methods=["POST"])
+    def next_question():
+        try:
+            # - Fetch the request body
+            body = request.get_json()
+
+            # - Query questions, excluding previous questions, chosing one 
+            # - randomly
+            previous_questions = body.get('previous_questions')
+            possible_next_questions = (Question.query.filter(
+                                        Question.id.notin_(previous_questions)
+                                        ).all())
+            next_question = random.choice(possible_next_questions).format()
+
+            # - Return jsonified data
+            return jsonify({
+                    "success": True,
+                    "question": next_question
+                    })
+
+        # - For an inner error catch the error type, if nonexisten raise 400
+        except Exception as e:
+            if isinstance(e, HTTPException):
+                abort(e.code)
+            else:
+                abort(400)
 
     """
     @TODO:
@@ -142,6 +306,7 @@ def create_app(test_config=None):
     ##########################################################################
     # - Error handlers
     ##########################################################################
+
 
     # - 400: Bad request
     @app.errorhandler(400)
