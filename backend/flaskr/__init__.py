@@ -15,6 +15,7 @@ from models import setup_db, Question, Category
 
 QUESTIONS_PER_PAGE = 10
 
+# - Paginate the questions
 def paginate_questions(request, selection):
     page = request.args.get("page", 1, type=int)
     start = (page - 1) * QUESTIONS_PER_PAGE
@@ -154,7 +155,7 @@ def create_app(test_config=None):
                                        .order_by(Question.id).all())
             questions_formatted = format_questions(questions_unformatted)
 
-            # - If the current_questions object is emtpy throw an error
+            # - If the questions_formatted object is emtpy throw an error
             if(len(questions_formatted) == 0):
                 abort(404)
             
@@ -222,10 +223,29 @@ def create_app(test_config=None):
             # - Query questions, excluding previous questions, chosing one 
             # - randomly
             previous_questions = body.get('previous_questions')
-            possible_next_questions = (Question.query.filter(
-                                        Question.id.notin_(previous_questions)
-                                        ).all())
-            next_question = random.choice(possible_next_questions).format()
+            current_category = body.get('quiz_category', None)['id']
+
+            # - If category 'all' was chosen filter previous questions
+            if(current_category == 0):
+                possible_next_questions = (Question.query.filter(
+                                                Question.id.notin_(
+                                                previous_questions)).all())
+            
+                # - Choose a random from the remaining questions
+                next_question = random.choice(possible_next_questions).format()
+
+            # - If a specific category was chosen, filter previous questions
+            # - and for respective category
+            else: 
+                possible_next_questions = (Question.query.filter(
+                                                Question.id.notin_(
+                                                previous_questions),
+                                                Question.category ==
+                                                current_category)
+                                                .all())
+
+                # - Choose a random from the remaining questions
+                next_question = random.choice(possible_next_questions).format()
 
             # - Return jsonified data
             return jsonify({
@@ -240,69 +260,89 @@ def create_app(test_config=None):
             else:
                 abort(400)
 
-    """
-    @TODO:
-    Create an endpoint to handle GET requests for questions,
-    including pagination (every 10 questions).
-    This endpoint should return a list of questions,
-    number of total questions, current category, categories.
 
-    TEST: At this point, when you start the application
-    you should see questions and categories generated,
-    ten questions per page and pagination at the bottom of the screen for three pages.
-    Clicking on the page numbers should update the questions.
-    """
+    # - POST endpoint to '/questions': Adds a new question to the database
+    # - returns a response wether the action was successfull
+    @app.route("/questions", methods=["POST"])
+    def create_question():
 
-    """
-    @TODO:
-    Create an endpoint to DELETE question using a question ID.
+        # - Fetch the request body
+        body = request.get_json()
 
-    TEST: When you click the trash icon next to a question, the question will be removed.
-    This removal will persist in the database and when you refresh the page.
-    """
+        # - Check if the body contains a search term
+        search_term = body.get('searchTerm', None)
 
-    """
-    @TODO:
-    Create an endpoint to POST a new question,
-    which will require the question and answer text,
-    category, and difficulty score.
+        # - Assign the values for a new question record
+        new_question = body.get('question', None)
+        new_answer = body.get('answer', None)
+        new_difficulty = body.get('difficulty', None)
+        new_category = body.get('category', None)
 
-    TEST: When you submit a question on the "Add" tab,
-    the form will clear and the question will appear at the end of the last page
-    of the questions list in the "List" tab.
-    """
+        # - If the body doesnt contain a search term create a new question
+        if(search_term is None and new_question is not None):
 
-    """
-    @TODO:
-    Create a POST endpoint to get questions based on a search term.
-    It should return any questions for whom the search term
-    is a substring of the question.
+            # - Try to create a new question record and add it to the database
+            try:
+                question = Question(question = new_question, 
+                                    answer = new_answer, 
+                                    difficulty = new_difficulty, 
+                                    category = new_category
+                                    )
+                question.insert()
 
-    TEST: Search by any phrase. The questions list will update to include
-    only question that include that string within their question.
-    Try using the word "title" to start.
-    """
+                # - Return a response in case of success
+                return jsonify(
+                    {
+                        "success": True
+                    }
+                )
 
-    """
-    @TODO:
-    Create a GET endpoint to get questions based on category.
+            # - For an inner error catch the error type, if nonexisten raise 422
+            except Exception as e:
+                if isinstance(e, HTTPException):
+                    abort(e.code)
+                else:
+                    abort(422)
 
-    TEST: In the "List" tab / main screen, clicking on one of the
-    categories in the left column will cause only questions of that
-    category to be shown.
-    """
+        # - If the body does contain a search term search questions
+        elif(search_term is not None):
+            try:
+                # - Search questions like the search term and format the result
+                questions_unformatted = Question.query.filter(Question.question
+                                            .ilike(f'%{search_term}%')).all()                            
+                questions_formatted = format_questions(questions_unformatted)
 
-    """
-    @TODO:
-    Create a POST endpoint to get questions to play the quiz.
-    This endpoint should take category and previous question parameters
-    and return a random questions within the given category,
-    if provided, and that is not one of the previous questions.
+                # - If the questions_formatted object is emtpy throw an error
+                if(len(questions_formatted) == 0):
+                    abort(404)
+                
+                # - Query and format the categories
+                categories_formatted = format_categories(Category.query.all())
+                
+                # - If the categories_formatted object is emtpy throw an error
+                if(len(categories_formatted) == 0):
+                    abort(404)
+                
+                # - Return jsonified data
+                return jsonify({
+                    'success': True,
+                    'questions': questions_formatted,
+                    'totalQuestions': len(Question.query.all()),
+                    'current_category': (categories_formatted[
+                                            questions_formatted[0]['category']
+                                            ])
+                    })
 
-    TEST: In the "Play" tab, after a user selects "All" or a category,
-    one question at a time is displayed, the user is allowed to answer
-    and shown whether they were correct or not.
-    """
+            # - For an inner error catch the error type, if nonexisten raise 422
+            except Exception as e:
+                if isinstance(e, HTTPException):
+                    abort(e.code)
+                else:
+                    abort(422)
+        
+        else:
+            abort(400)
+
     ##########################################################################
     # - Error handlers
     ##########################################################################
@@ -341,6 +381,18 @@ def create_app(test_config=None):
                 "message": "unprocessable"
             }),
             422,
+        )
+    
+    # - 405: Not allowed
+    @app.errorhandler(405)
+    def unprocessable(error):
+        return (
+            jsonify({
+                "success": False,
+                "error": 405,
+                "message": "not allowed"
+            }),
+            405,
         )
 
     return app
