@@ -230,7 +230,7 @@ def create_app(test_config=None):
                 possible_next_questions = (Question.query.filter(
                                                 Question.id.notin_(
                                                 previous_questions)).all())
-            
+
                 # - Choose a random from the remaining questions
                 next_question = random.choice(possible_next_questions).format()
 

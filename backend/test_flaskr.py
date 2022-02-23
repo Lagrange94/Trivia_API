@@ -20,7 +20,7 @@ class TriviaTestCase(unittest.TestCase):
     def setUp(self):
         """Define test variables and initialize app."""
         user = 'postgres'
-        password = 'subwoofer67'   
+        password = ''  
         self.app = create_app()
         self.client = self.app.test_client
         self.database_name = "trivia_test"
